@@ -1,19 +1,18 @@
 import os
-import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from google import genai
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
-TELEGRAM_TOKEN    = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY")
-DATABASE_URL      = os.getenv("DATABASE_URL")
-TIMEZONE          = ZoneInfo("Europe/Istanbul")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DATABASE_URL   = os.getenv("DATABASE_URL")
+TIMEZONE       = ZoneInfo("Europe/Istanbul")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+gemini = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ── Veritabanı ────────────────────────────────────────────────
@@ -22,38 +21,50 @@ def db_baglanti():
     return psycopg2.connect(DATABASE_URL)
 
 def db_baslat():
-    with db_baglanti() as con:
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS mesajlar (
-                id        SERIAL PRIMARY KEY,
-                chat_id   BIGINT NOT NULL,
-                kullanici TEXT,
-                metin     TEXT,
-                zaman     TIMESTAMPTZ NOT NULL
-            )
-        """)
-        con.execute("CREATE INDEX IF NOT EXISTS idx_chat_zaman ON mesajlar (chat_id, zaman)")
+    con = db_baglanti()
+    cur = con.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS mesajlar (
+            id        SERIAL PRIMARY KEY,
+            chat_id   BIGINT NOT NULL,
+            kullanici TEXT,
+            metin     TEXT,
+            zaman     TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_zaman ON mesajlar (chat_id, zaman)")
+    con.commit()
+    cur.close()
+    con.close()
 
 def mesaj_ekle(chat_id, kullanici, metin, zaman):
-    with db_baglanti() as con:
-        con.execute(
-            "INSERT INTO mesajlar (chat_id, kullanici, metin, zaman) VALUES (%s, %s, %s, %s)",
-            (chat_id, kullanici, metin, zaman)
-        )
+    con = db_baglanti()
+    cur = con.cursor()
+    cur.execute(
+        "INSERT INTO mesajlar (chat_id, kullanici, metin, zaman) VALUES (%s, %s, %s, %s)",
+        (chat_id, kullanici, metin, zaman)
+    )
+    con.commit()
+    cur.close()
+    con.close()
 
 def mesaj_getir(chat_id, baslangic, bitis=None):
-    with db_baglanti() as con, con.cursor(cursor_factory=RealDictCursor) as cur:
-        if bitis:
-            cur.execute(
-                "SELECT kullanici, metin, zaman FROM mesajlar WHERE chat_id=%s AND zaman>=%s AND zaman<=%s ORDER BY zaman",
-                (chat_id, baslangic, bitis)
-            )
-        else:
-            cur.execute(
-                "SELECT kullanici, metin, zaman FROM mesajlar WHERE chat_id=%s AND zaman>=%s ORDER BY zaman",
-                (chat_id, baslangic)
-            )
-        return cur.fetchall()
+    con = db_baglanti()
+    cur = con.cursor(cursor_factory=RealDictCursor)
+    if bitis:
+        cur.execute(
+            "SELECT kullanici, metin, zaman FROM mesajlar WHERE chat_id=%s AND zaman>=%s AND zaman<=%s ORDER BY zaman",
+            (chat_id, baslangic, bitis)
+        )
+    else:
+        cur.execute(
+            "SELECT kullanici, metin, zaman FROM mesajlar WHERE chat_id=%s AND zaman>=%s ORDER BY zaman",
+            (chat_id, baslangic)
+        )
+    rows = cur.fetchall()
+    cur.close()
+    con.close()
+    return rows
 
 
 # ── Tarih Parser ──────────────────────────────────────────────
@@ -133,8 +144,9 @@ async def ozet_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{baslangic.strftime('%d.%m.%Y %H:%M')} sonrası"
     )
 
-    response = model.generate_content(
-        f"""Aşağıdaki Telegram grup konuşmasını Türkçe özetle.
+    response = gemini.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=f"""Aşağıdaki Telegram grup konuşmasını Türkçe özetle.
 Önemli konuları, kararları ve aksiyonları madde madde listele.
 Mesaj saatleri köşeli parantez içinde verilmiştir.
 
