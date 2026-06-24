@@ -1,5 +1,5 @@
 import os
-import anthropic
+import google.generativeai as genai
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
@@ -7,15 +7,16 @@ from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-DATABASE_URL     = os.getenv("DATABASE_URL")
-TIMEZONE         = ZoneInfo("Europe/Istanbul")
+TELEGRAM_TOKEN    = os.getenv("TELEGRAM_TOKEN")
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY")
+DATABASE_URL      = os.getenv("DATABASE_URL")
+TIMEZONE          = ZoneInfo("Europe/Istanbul")
 
-anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 
-# ── Veritabanı ──────────────────────────────────────────────
+# ── Veritabanı ────────────────────────────────────────────────
 
 def db_baglanti():
     return psycopg2.connect(DATABASE_URL)
@@ -24,11 +25,11 @@ def db_baslat():
     with db_baglanti() as con:
         con.execute("""
             CREATE TABLE IF NOT EXISTS mesajlar (
-                id       SERIAL PRIMARY KEY,
-                chat_id  BIGINT NOT NULL,
+                id        SERIAL PRIMARY KEY,
+                chat_id   BIGINT NOT NULL,
                 kullanici TEXT,
-                metin    TEXT,
-                zaman    TIMESTAMPTZ NOT NULL
+                metin     TEXT,
+                zaman     TIMESTAMPTZ NOT NULL
             )
         """)
         con.execute("CREATE INDEX IF NOT EXISTS idx_chat_zaman ON mesajlar (chat_id, zaman)")
@@ -55,7 +56,7 @@ def mesaj_getir(chat_id, baslangic, bitis=None):
         return cur.fetchall()
 
 
-# ── Tarih Parser ─────────────────────────────────────────────
+# ── Tarih Parser ──────────────────────────────────────────────
 
 def parse_tarih_saat(args):
     if not args:
@@ -68,8 +69,8 @@ def parse_tarih_saat(args):
         )
 
     joined = " ".join(args)
+    bugun  = datetime.now(TIMEZONE).date()
 
-    # Aralık: 4 token → "2025-06-23 09:00 2025-06-23 18:00"
     if len(args) >= 4:
         try:
             bas = datetime.strptime(" ".join(args[:2]), "%Y-%m-%d %H:%M").replace(tzinfo=TIMEZONE)
@@ -78,14 +79,7 @@ def parse_tarih_saat(args):
         except ValueError:
             pass
 
-    # Tek nokta
-    bugun = datetime.now(TIMEZONE).date()
-    formatlar = [
-        ("%Y-%m-%d %H:%M", False),
-        ("%Y-%m-%d",       False),
-        ("%H:%M",          True),
-    ]
-    for fmt, sadece_saat in formatlar:
+    for fmt, sadece_saat in [("%Y-%m-%d %H:%M", False), ("%Y-%m-%d", False), ("%H:%M", True)]:
         try:
             if sadece_saat:
                 dt = datetime.strptime(joined, fmt).replace(
@@ -139,22 +133,17 @@ async def ozet_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{baslangic.strftime('%d.%m.%Y %H:%M')} sonrası"
     )
 
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1000,
-        messages=[{
-            "role": "user",
-            "content": f"""Aşağıdaki Telegram grup konuşmasını Türkçe özetle.
+    response = model.generate_content(
+        f"""Aşağıdaki Telegram grup konuşmasını Türkçe özetle.
 Önemli konuları, kararları ve aksiyonları madde madde listele.
 Mesaj saatleri köşeli parantez içinde verilmiştir.
 
 Konuşma ({aralik_str}):
 {mesaj_metni}"""
-        }]
     )
 
     await update.message.reply_text(
-        f"📋 *{aralik_str} özeti* ({len(satirlar)} mesaj)\n\n{response.content[0].text}",
+        f"📋 *{aralik_str} özeti* ({len(satirlar)} mesaj)\n\n{response.text}",
         parse_mode="Markdown"
     )
 
