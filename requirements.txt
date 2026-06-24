@@ -1,4 +1,3 @@
 python-telegram-bot
-anthropic
 psycopg2-binary
-pip install google-generativeai
+google-generativeai
