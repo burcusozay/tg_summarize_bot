@@ -145,7 +145,7 @@ async def ozet_al(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     response = gemini.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         contents=f"""Aşağıdaki Telegram grup konuşmasını Türkçe özetle.
 Önemli konuları, kararları ve aksiyonları madde madde listele.
 Mesaj saatleri köşeli parantez içinde verilmiştir.
