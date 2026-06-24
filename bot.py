@@ -163,6 +163,13 @@ Konuşma ({aralik_str}):
 # ── Ana Fonksiyon ─────────────────────────────────────────────
 
 def main():
+    print(f"TELEGRAM_TOKEN: '{TELEGRAM_TOKEN}'")
+    print(f"GEMINI_API_KEY: '{GEMINI_API_KEY}'")
+    print(f"DATABASE_URL: '{DATABASE_URL}'")
+    
+    if not TELEGRAM_TOKEN:
+        raise ValueError("TELEGRAM_TOKEN boş!")
+    
     db_baslat()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mesaj_kaydet))
