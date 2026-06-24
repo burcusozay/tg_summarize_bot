@@ -74,23 +74,28 @@ def parse_tarih_saat(args):
         return None, (
             "Kullanım:\n"
             "/ozet 14:00\n"
-            "/ozet 2025-06-23\n"
-            "/ozet 2025-06-23 14:00\n"
-            "/ozet 2025-06-23 09:00 2025-06-23 18:00"
+            "/ozet 23.06.2025\n"
+            "/ozet 23.06.2025 14:00\n"
+            "/ozet 23.06.2025 09:00 23.06.2025 18:00"
         )
 
     joined = " ".join(args)
     bugun  = datetime.now(TIMEZONE).date()
 
+    # Aralık: 23.06.2025 09:00 23.06.2025 18:00
     if len(args) >= 4:
         try:
-            bas = datetime.strptime(" ".join(args[:2]), "%Y-%m-%d %H:%M").replace(tzinfo=TIMEZONE)
-            bit = datetime.strptime(" ".join(args[2:4]), "%Y-%m-%d %H:%M").replace(tzinfo=TIMEZONE)
+            bas = datetime.strptime(" ".join(args[:2]), "%d.%m.%Y %H:%M").replace(tzinfo=TIMEZONE)
+            bit = datetime.strptime(" ".join(args[2:4]), "%d.%m.%Y %H:%M").replace(tzinfo=TIMEZONE)
             return (bas, bit), None
         except ValueError:
             pass
 
-    for fmt, sadece_saat in [("%Y-%m-%d %H:%M", False), ("%Y-%m-%d", False), ("%H:%M", True)]:
+    for fmt, sadece_saat in [
+        ("%d.%m.%Y %H:%M", False),   # 23.06.2025 14:00
+        ("%d.%m.%Y",       False),   # 23.06.2025
+        ("%H:%M",          True),    # 14:00  → bugün
+    ]:
         try:
             if sadece_saat:
                 dt = datetime.strptime(joined, fmt).replace(
@@ -102,8 +107,14 @@ def parse_tarih_saat(args):
         except ValueError:
             continue
 
-    return None, "❌ Format tanınamadı. Örnek: /ozet 2025-06-23 14:00"
-
+    return None, (
+        "❌ Format tanınamadı.\n\n"
+        "Desteklenen formatlar:\n"
+        "• /ozet 14:00\n"
+        "• /ozet 23.06.2025\n"
+        "• /ozet 23.06.2025 14:00\n"
+        "• /ozet 23.06.2025 09:00 23.06.2025 18:00"
+    )
 
 # ── Handler'lar ───────────────────────────────────────────────
 
